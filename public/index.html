@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Random Drive Media</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/config.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel controls">
+        <div class="eyebrow">Google Drive Media Browser</div>
+        <h1>Random Drive Media</h1>
+        <p class="intro">
+          Paste a Google Drive folder URL or folder ID to crawl that folder and every nested
+          subfolder, then show one random image or video.
+        </p>
+
+        <form id="folderForm" class="stack">
+          <label class="field">
+            <span>Folder ID or Drive URL</span>
+            <input
+              id="folderInput"
+              name="folder"
+              type="text"
+              placeholder="https://drive.google.com/drive/folders/..."
+              autocomplete="off"
+              required
+            />
+          </label>
+
+          <section class="card options">
+            <h2>Media types</h2>
+            <label class="checkbox">
+              <input id="includeImagesCheckbox" type="checkbox" checked />
+              <span>Images</span>
+            </label>
+            <label class="checkbox">
+              <input id="includeVideosCheckbox" type="checkbox" checked />
+              <span>Videos</span>
+            </label>
+          </section>
+
+          <section class="card auth">
+            <h2>Access mode</h2>
+            <p>
+              Public folders work with an API key. For private or shared folders, configure OAuth
+              and sign in first.
+            </p>
+            <label class="checkbox">
+              <input id="useAuthCheckbox" type="checkbox" />
+              <span>Use Google sign-in for this folder</span>
+            </label>
+            <div class="button-row">
+              <button id="signInButton" type="button" class="secondary">Sign in with Google</button>
+              <button id="signOutButton" type="button" class="ghost" hidden>Sign out</button>
+            </div>
+            <p id="authStatus" class="hint">OAuth is optional unless the folder is not public.</p>
+          </section>
+
+          <div class="button-row">
+            <button id="loadButton" type="submit">Load folder</button>
+            <button id="randomButton" type="button" class="secondary" disabled>
+              Show another random item
+            </button>
+          </div>
+        </form>
+
+        <section class="card">
+          <h2>Setup</h2>
+          <ol class="instructions">
+            <li>Create a Google Cloud project and enable the Google Drive API.</li>
+            <li>Create a browser API key and set <code>GOOGLE_API_KEY</code> in <code>.env</code>.</li>
+            <li>Optional: create a Web OAuth client and set <code>GOOGLE_CLIENT_ID</code>.</li>
+            <li>
+              If you use OAuth locally, add <code>http://localhost:3000</code> to the authorized
+              JavaScript origins.
+            </li>
+          </ol>
+        </section>
+
+        <p id="status" class="status" aria-live="polite">
+          Enter a Google Drive folder ID or URL, then load media.
+        </p>
+      </section>
+
+      <section class="panel viewer">
+        <div class="viewer-header">
+          <div>
+            <h2>Selected media</h2>
+            <p class="viewer-copy">A random result appears here after the folder scan completes.</p>
+          </div>
+          <span id="count" class="pill">0 items loaded</span>
+        </div>
+
+        <div id="emptyState" class="empty-state">
+          <p>Your random image or video will appear here.</p>
+        </div>
+
+        <figure id="mediaFrame" class="media-frame" hidden>
+          <img id="imageViewer" class="media" hidden alt="" />
+          <iframe
+            id="videoFrame"
+            class="media"
+            hidden
+            title="Google Drive video preview"
+            allow="autoplay; fullscreen"
+          ></iframe>
+          <video id="videoViewer" class="media" hidden controls playsinline></video>
+          <figcaption class="meta">
+            <div>
+              <div id="currentName" class="media-name">Nothing selected yet</div>
+              <div id="currentPath" class="media-path"></div>
+              <div id="currentMeta" class="media-meta"></div>
+            </div>
+            <a
+              id="openDriveLink"
+              href="#"
+              target="_blank"
+              rel="noreferrer noopener"
+              class="drive-link"
+              hidden
+            >
+              Open in Drive
+            </a>
+          </figcaption>
+        </figure>
+      </section>
+    </main>
+  </body>
+</html>

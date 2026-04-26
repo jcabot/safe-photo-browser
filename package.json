@@ -1,0 +1,12 @@
+{
+  "name": "safe-photo-browser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Randomly display images and videos from a Google Drive folder tree.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "check": "node --check server.js && node --check public/app.js"
+  }
+}
