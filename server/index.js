@@ -24,11 +24,16 @@ function getOAuthClient() {
   return oauthClient;
 }
 
+function getDriveService() {
+  if (!driveService) {
+    driveService = new GoogleDriveService({ auth: getOAuthClient() });
+  }
+  return driveService;
+}
+
 function getSessionManager() {
   if (!sessionManager) {
-    const auth = getOAuthClient();
-    driveService = new GoogleDriveService({ auth });
-    sessionManager = new SessionManager({ driveService });
+    sessionManager = new SessionManager({ driveService: getDriveService() });
   }
   return sessionManager;
 }
@@ -58,8 +63,6 @@ app.get("/auth/google/callback", async (req, res, next) => {
     const { tokens } = await auth.getToken(String(code));
     auth.setCredentials(tokens);
     saveTokens(tokens);
-    driveService = new GoogleDriveService({ auth });
-    sessionManager = new SessionManager({ driveService });
     res.redirect(`${CLIENT_ORIGIN}?signedIn=1`);
   } catch (error) {
     next(error);
@@ -130,14 +133,31 @@ app.post("/api/session/expand", async (req, res, next) => {
   }
 });
 
+app.post("/api/session/end", (req, res, next) => {
+  try {
+    res.json(getSessionManager().end());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/drive/folders", async (req, res, next) => {
+  try {
+    const parentId = (req.query.parentId?.toString().trim() || "root");
+    const pageToken = req.query.pageToken?.toString();
+    const result = await getDriveService().listSubfolders({ parentId, pageToken });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/media/:fileId", async (req, res, next) => {
   try {
     const manager = getSessionManager();
-    const state = manager.getState();
-    const knownMedia = [state.current].filter(Boolean);
-    const requested = knownMedia.find((item) => item.id === req.params.fileId) ?? state.current;
+    const requested = manager.findKnownMedia(req.params.fileId);
 
-    const response = await driveService.streamFile({
+    const response = await getDriveService().streamFile({
       fileId: req.params.fileId,
       range: req.headers.range
     });

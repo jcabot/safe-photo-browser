@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ChevronDown,
@@ -16,18 +16,80 @@ import {
   X
 } from "lucide-react";
 import "./styles.css";
+import { runAutoAdvanceEffect } from "./autoAdvance.js";
 
 const API = "";
+const SIDEBAR_MIN = 240;
+const SIDEBAR_MAX = 640;
+const SIDEBAR_DEFAULT = 320;
 
 function App() {
   const [signedIn, setSignedIn] = useState(false);
-  const [folderIdOrUrl, setFolderIdOrUrl] = useState("");
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [maxItems, setMaxItems] = useState(100);
   const [state, setState] = useState(null);
   const [expanded, setExpanded] = useState(new Set());
   const [busy, setBusy] = useState(false);
   const [autoAdvance, setAutoAdvance] = useState(false);
   const [error, setError] = useState("");
+  const [autoAdvanceSeconds, setAutoAdvanceSeconds] = useState(() => {
+    if (typeof window === "undefined") return 6;
+    const stored = Number(window.localStorage.getItem("autoAdvanceSeconds"));
+    return Number.isFinite(stored) && stored >= 1 && stored <= 600 ? stored : 6;
+  });
+  const [autoAdvanceVideos, setAutoAdvanceVideos] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("autoAdvanceVideos") === "true";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem("autoAdvanceSeconds", String(autoAdvanceSeconds));
+  }, [autoAdvanceSeconds]);
+
+  useEffect(() => {
+    window.localStorage.setItem("autoAdvanceVideos", String(autoAdvanceVideos));
+  }, [autoAdvanceVideos]);
+
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return SIDEBAR_DEFAULT;
+    const stored = Number(window.localStorage.getItem("sidebarWidth"));
+    const fromStorage =
+      Number.isFinite(stored) && stored >= SIDEBAR_MIN && stored <= SIDEBAR_MAX
+        ? stored
+        : SIDEBAR_DEFAULT;
+    const maxForViewport = Math.max(SIDEBAR_MIN, window.innerWidth - 320);
+    return Math.min(fromStorage, maxForViewport);
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem("sidebarWidth", String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  function startResize(event) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    function onMove(moveEvent) {
+      const delta = moveEvent.clientX - startX;
+      const next = Math.min(
+        SIDEBAR_MAX,
+        Math.max(SIDEBAR_MIN, startWidth + delta)
+      );
+      setSidebarWidth(next);
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
 
   useEffect(() => {
     api("/api/auth/status")
@@ -37,10 +99,14 @@ function App() {
 
   async function startSession(event) {
     event.preventDefault();
+    if (!selectedFolder) {
+      setError("Pick a Drive folder first.");
+      return;
+    }
     await run(async () => {
       const nextState = await api("/api/session/start", {
         method: "POST",
-        body: { folderIdOrUrl, maxItems }
+        body: { folderIdOrUrl: selectedFolder.id, maxItems }
       });
       setState(nextState);
       setExpanded(new Set([nextState.rootFolderId]));
@@ -56,9 +122,17 @@ function App() {
   }
 
   async function reset() {
-    setState(null);
+    setBusy(true);
     setError("");
-    setAutoAdvance(false);
+    try {
+      await api("/api/session/end", { method: "POST" });
+    } catch {
+      // server may have no active session — clearing local state regardless
+    } finally {
+      setBusy(false);
+      setState(null);
+      setAutoAdvance(false);
+    }
   }
 
   async function toggleFolder(folderId, included) {
@@ -72,23 +146,15 @@ function App() {
     });
   }
 
-  async function toggleExpanded(folderId) {
-    const nextExpanded = new Set(expanded);
-    if (nextExpanded.has(folderId)) {
-      nextExpanded.delete(folderId);
-      setExpanded(nextExpanded);
-      return;
-    }
-
-    nextExpanded.add(folderId);
-    setExpanded(nextExpanded);
-    await run(async () => {
-      setState(
-        await api("/api/session/expand", {
-          method: "POST",
-          body: { folderId }
-        })
-      );
+  function toggleExpanded(folderId) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
     });
   }
 
@@ -107,7 +173,7 @@ function App() {
   const current = state?.current ?? null;
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" style={{ "--sidebar-width": `${sidebarWidth}px` }}>
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
@@ -133,12 +199,17 @@ function App() {
         <form className="panel session-form" onSubmit={startSession}>
           <label>
             Drive folder
-            <input
-              value={folderIdOrUrl}
-              onChange={(event) => setFolderIdOrUrl(event.target.value)}
-              placeholder="Folder URL or ID"
-              required
-            />
+            <button
+              type="button"
+              className="folder-picker-trigger"
+              onClick={() => setPickerOpen(true)}
+              disabled={!signedIn}
+              title={signedIn ? "Browse your Drive" : "Sign in first"}
+            >
+              <Folder size={16} aria-hidden="true" />
+              <span>{selectedFolder ? selectedFolder.name : "Browse Drive..."}</span>
+              <ChevronRight size={16} aria-hidden="true" />
+            </button>
           </label>
           <label>
             Session limit
@@ -150,11 +221,51 @@ function App() {
               onChange={(event) => setMaxItems(event.target.value)}
             />
           </label>
-          <button className="primary-button" type="submit" disabled={busy}>
+          <button className="primary-button" type="submit" disabled={busy || !selectedFolder}>
             {busy ? <Loader2 className="spin" size={18} /> : <CirclePlay size={18} />}
             Start
           </button>
         </form>
+
+        {pickerOpen ? (
+          <FolderPicker
+            onPick={(folder) => {
+              setSelectedFolder(folder);
+              setPickerOpen(false);
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+        ) : null}
+
+        <section className="panel">
+          <div className="section-title">
+            <CirclePlay size={17} aria-hidden="true" />
+            Auto advance
+          </div>
+          <label>
+            Seconds per image
+            <input
+              type="number"
+              min="1"
+              max="600"
+              value={autoAdvanceSeconds}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setAutoAdvanceSeconds(
+                  Number.isFinite(value) && value >= 1 ? Math.min(value, 600) : 1
+                );
+              }}
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={autoAdvanceVideos}
+              onChange={(event) => setAutoAdvanceVideos(event.target.checked)}
+            />
+            Use timer for videos too
+          </label>
+        </section>
 
         {state ? (
           <section className="tree-panel">
@@ -171,6 +282,14 @@ function App() {
           </section>
         ) : null}
       </aside>
+
+      <div
+        className="resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onMouseDown={startResize}
+      />
 
       <section className="viewer-area">
         <div className="toolbar">
@@ -207,8 +326,13 @@ function App() {
 
         <MediaStage
           item={current}
+          folders={state?.folders}
+          hasSession={state !== null}
           exhausted={state?.exhausted}
+          busy={busy}
           autoAdvance={autoAdvance}
+          autoAdvanceSeconds={autoAdvanceSeconds}
+          autoAdvanceVideos={autoAdvanceVideos}
           onEnded={next}
         />
       </section>
@@ -216,11 +340,198 @@ function App() {
   );
 }
 
-function MediaStage({ item, exhausted, autoAdvance, onEnded }) {
+function FolderPicker({ onPick, onClose }) {
+  const [stack, setStack] = useState([{ id: "root", name: "My Drive" }]);
+  const [folders, setFolders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const current = stack[stack.length - 1];
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    api(`/api/drive/folders?parentId=${encodeURIComponent(current.id)}`)
+      .then((data) => {
+        if (cancelled) return;
+        setFolders(data.files ?? []);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message);
+        setFolders([]);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [current.id]);
+
+  useEffect(() => {
+    function onKey(event) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  function navigateInto(folder) {
+    setStack((prev) => [...prev, folder]);
+  }
+
+  function navigateTo(index) {
+    setStack((prev) => prev.slice(0, index + 1));
+  }
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Pick a Drive folder</h2>
+          <button
+            type="button"
+            className="icon-button small"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="breadcrumbs">
+          {stack.map((item, index) => (
+            <React.Fragment key={item.id}>
+              {index > 0 ? (
+                <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
+              ) : null}
+              <button
+                type="button"
+                className="crumb"
+                onClick={() => navigateTo(index)}
+                disabled={index === stack.length - 1}
+              >
+                {item.name}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div className="folder-list">
+          {loading ? (
+            <div className="folder-list-message">
+              <Loader2 className="spin" size={18} />
+              Loading...
+            </div>
+          ) : null}
+          {error ? <div className="folder-list-message error">{error}</div> : null}
+          {!loading && !error && folders.length === 0 ? (
+            <div className="folder-list-message">No subfolders here.</div>
+          ) : null}
+          {!loading && !error
+            ? folders.map((folder) => (
+                <button
+                  key={folder.id}
+                  type="button"
+                  className="folder-list-item"
+                  onClick={() => navigateInto(folder)}
+                >
+                  <Folder size={16} aria-hidden="true" />
+                  <span title={folder.name}>{folder.name}</span>
+                  <ChevronRight size={16} aria-hidden="true" />
+                </button>
+              ))
+            : null}
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" className="secondary-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => onPick(current)}
+          >
+            Pick "{current.name}"
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MediaStage({
+  item,
+  folders,
+  hasSession,
+  exhausted,
+  busy,
+  autoAdvance,
+  autoAdvanceSeconds,
+  autoAdvanceVideos,
+  onEnded
+}) {
+  const onEndedRef = useRef(onEnded);
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
+
+  // Auto-advance timer — driven by state, not events. The effect re-runs when
+  // autoAdvance, autoAdvanceSeconds, autoAdvanceVideos, or item change, so
+  // toggling auto-advance ON while an item is already showing immediately
+  // starts a fresh timer (this was the bug — the old code ran setTimeout
+  // inside img.onLoad / video.onPlay, neither of which re-fires on toggle).
+  useEffect(() => {
+    return runAutoAdvanceEffect({
+      item,
+      autoAdvance,
+      autoAdvanceSeconds,
+      autoAdvanceVideos,
+      onEnded: () => onEndedRef.current?.()
+    });
+  }, [
+    item?.id,
+    item?.mimeType,
+    autoAdvance,
+    autoAdvanceSeconds,
+    autoAdvanceVideos
+  ]);
+
+  const fullPath = useMemo(
+    () => (item ? buildItemPath(item, folders) : ""),
+    [item, folders]
+  );
+
   if (!item) {
+    if (hasSession && !exhausted) {
+      return (
+        <div className="empty-stage">
+          <p>
+            Filter folders in the sidebar, then click{" "}
+            <button
+              type="button"
+              className="link-button"
+              onClick={onEnded}
+              disabled={busy}
+            >
+              Next
+            </button>{" "}
+            to begin.
+          </p>
+        </div>
+      );
+    }
+    const message = exhausted ? "No more eligible media." : "Start a session to begin.";
     return (
       <div className="empty-stage">
-        <p>{exhausted ? "No more eligible media." : "Start a session to begin."}</p>
+        <p>{message}</p>
       </div>
     );
   }
@@ -236,25 +547,28 @@ function MediaStage({ item, exhausted, autoAdvance, onEnded }) {
             key={item.id}
             src={src}
             controls
-            autoPlay={autoAdvance}
-            onEnded={autoAdvance ? onEnded : undefined}
+            autoPlay
+            onEnded={autoAdvance && !autoAdvanceVideos ? onEnded : undefined}
+            onError={(event) => {
+              const code = event.currentTarget.error?.code;
+              // 3 = MEDIA_ERR_DECODE, 4 = MEDIA_ERR_SRC_NOT_SUPPORTED.
+              // Skip past anything the browser can't play; leave network
+              // errors (code 2) on screen so the user can retry.
+              if (code === 3 || code === 4) onEnded();
+            }}
           />
         ) : (
           <img
             key={item.id}
             src={src}
             alt={item.name}
-            onLoad={() => {
-              if (autoAdvance) {
-                window.setTimeout(onEnded, 6000);
-              }
-            }}
+            onError={() => onEnded()}
           />
         )}
       </div>
       <div className="caption">
         {isVideo ? <Video size={18} aria-hidden="true" /> : <Image size={18} aria-hidden="true" />}
-        <span title={item.name}>{item.name}</span>
+        <span title={fullPath}>{fullPath}</span>
       </div>
     </div>
   );
@@ -341,6 +655,22 @@ function IconButton({ label, children, ...props }) {
       {children}
     </button>
   );
+}
+
+function buildItemPath(item, folders) {
+  if (!item) return "";
+  if (!folders?.length) return item.name;
+  const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+  const parentId = item.parentIds?.[0];
+  if (!parentId) return item.name;
+
+  const segments = [item.name];
+  let cursor = foldersById.get(parentId);
+  while (cursor) {
+    segments.unshift(cursor.name);
+    cursor = cursor.parentId ? foldersById.get(cursor.parentId) : null;
+  }
+  return segments.join(" › ");
 }
 
 async function api(path, options = {}) {

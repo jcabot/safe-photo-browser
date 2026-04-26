@@ -21,6 +21,10 @@ export function createOAuthClient() {
   if (fs.existsSync(TOKEN_PATH)) {
     client.setCredentials(JSON.parse(fs.readFileSync(TOKEN_PATH, "utf8")));
   }
+  client.on("tokens", (tokens) => {
+    const merged = { ...client.credentials, ...tokens };
+    saveTokens(merged);
+  });
   return client;
 }
 
@@ -57,6 +61,24 @@ export class GoogleDriveService {
       pageSize,
       pageToken: pageToken ?? undefined,
       orderBy: "folder,name",
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true
+    });
+
+    return {
+      files: response.data.files ?? [],
+      nextPageToken: response.data.nextPageToken ?? null
+    };
+  }
+
+  async listSubfolders({ parentId, pageToken, pageSize = 100 }) {
+    const escaped = parentId.replaceAll("'", "\\'");
+    const response = await this.drive.files.list({
+      q: `'${escaped}' in parents and trashed = false and mimeType = '${FOLDER_MIME}'`,
+      fields: "nextPageToken,files(id,name)",
+      pageSize,
+      pageToken: pageToken ?? undefined,
+      orderBy: "name",
       includeItemsFromAllDrives: true,
       supportsAllDrives: true
     });

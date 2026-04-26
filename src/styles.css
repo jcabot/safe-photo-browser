@@ -10,9 +10,15 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
+  overflow: hidden;
 }
 
 button,
@@ -22,8 +28,8 @@ input {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  min-height: 100vh;
+  grid-template-columns: var(--sidebar-width, 320px) 6px minmax(0, 1fr);
+  height: 100vh;
 }
 
 .sidebar {
@@ -32,8 +38,34 @@ input {
   gap: 16px;
   padding: 20px;
   background: #fffaf2;
-  border-right: 1px solid #ded6c9;
   overflow: auto;
+}
+
+.resize-handle {
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+  user-select: none;
+}
+
+.resize-handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #ded6c9;
+  transform: translateX(-50%);
+  transition:
+    background 0.15s ease,
+    width 0.15s ease;
+}
+
+.resize-handle:hover::before,
+.resize-handle:active::before {
+  background: #285f59;
+  width: 2px;
 }
 
 .brand {
@@ -117,6 +149,46 @@ input:focus {
   outline-offset: 1px;
 }
 
+input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #2f8a66;
+}
+
+.checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #1f2424;
+}
+
+.link-button {
+  display: inline;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #285f59;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-button:hover:not(:disabled) {
+  color: #1a4640;
+}
+
+.link-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .primary-button,
 .icon-button {
   display: inline-flex;
@@ -194,13 +266,24 @@ input:focus {
 .switch {
   display: inline-flex;
   align-items: center;
+  position: relative;
 }
 
+/* Visually-hidden checkbox. `clip` + 1px size + bounded inside .switch (which
+   is now position: relative) prevents the browser from scrolling the page
+   when the input receives focus on click — that scroll caused the page to
+   blank when toggling include/exclude in the folder tree. */
 .switch input {
   position: absolute;
+  inset: 0;
   opacity: 0;
   width: 1px;
   height: 1px;
+  margin: 0;
+  padding: 0;
+  clip: rect(0, 0, 0, 0);
+  overflow: hidden;
+  border: 0;
 }
 
 .switch span {
@@ -232,11 +315,12 @@ input:focus {
 }
 
 .viewer-area {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   padding: 18px;
   min-width: 0;
+  min-height: 0;
 }
 
 .toolbar {
@@ -277,8 +361,8 @@ input:focus {
 
 .media-stage,
 .empty-stage {
+  flex: 1 1 0;
   min-height: 0;
-  height: 100%;
 }
 
 .empty-stage {
@@ -296,8 +380,9 @@ input:focus {
 }
 
 .media-frame {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 0;
   border-radius: 8px;
   background: #222927;
@@ -310,6 +395,7 @@ input:focus {
   max-height: 100%;
   width: auto;
   height: auto;
+  object-fit: contain;
 }
 
 .caption {
@@ -334,13 +420,189 @@ input:focus {
   }
 }
 
+.folder-picker-trigger {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid #c9c1b6;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #fffdf8;
+  color: #1f2424;
+  cursor: pointer;
+  text-align: left;
+}
+
+.folder-picker-trigger:hover:not(:disabled) {
+  background: #f7f0e3;
+}
+
+.folder-picker-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.folder-picker-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #c9c1b6;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2424;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.secondary-button:hover {
+  background: #f3eee6;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(31, 36, 36, 0.45);
+  z-index: 50;
+  padding: 24px;
+}
+
+.modal {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(560px, 100%);
+  max-height: min(640px, 90vh);
+  background: #fffaf2;
+  border: 1px solid #ded6c9;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(31, 36, 36, 0.25);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #ded6c9;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  background: #fff5e6;
+  border-bottom: 1px solid #ded6c9;
+  font-size: 0.9rem;
+}
+
+.crumb {
+  border: 0;
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #285f59;
+  font-weight: 600;
+}
+
+.crumb:hover:not(:disabled) {
+  background: #f3eee6;
+}
+
+.crumb:disabled {
+  color: #1f2424;
+  cursor: default;
+  font-weight: 700;
+}
+
+.crumb-sep {
+  color: #69716f;
+}
+
+.folder-list {
+  overflow: auto;
+  padding: 6px;
+  background: #ffffff;
+}
+
+.folder-list-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px;
+  color: #69716f;
+  justify-content: center;
+}
+
+.folder-list-message.error {
+  color: #6e2522;
+}
+
+.folder-list-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  color: #1f2424;
+}
+
+.folder-list-item:hover {
+  background: #f3eee6;
+}
+
+.folder-list-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 18px;
+  border-top: 1px solid #ded6c9;
+  background: #fffaf2;
+}
+
 @media (max-width: 820px) {
   .app-shell {
     grid-template-columns: 1fr;
   }
 
+  .resize-handle {
+    display: none;
+  }
+
   .sidebar {
-    border-right: 0;
     border-bottom: 1px solid #ded6c9;
     max-height: 48vh;
   }
