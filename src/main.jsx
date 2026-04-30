@@ -42,6 +42,11 @@ function App() {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("autoAdvanceVideos") === "true";
   });
+  const [mediaTypes, setMediaTypes] = useState(() => {
+    if (typeof window === "undefined") return "both";
+    const stored = window.localStorage.getItem("mediaTypes");
+    return stored === "images" || stored === "videos" ? stored : "both";
+  });
 
   useEffect(() => {
     window.localStorage.setItem("autoAdvanceSeconds", String(autoAdvanceSeconds));
@@ -50,6 +55,10 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem("autoAdvanceVideos", String(autoAdvanceVideos));
   }, [autoAdvanceVideos]);
+
+  useEffect(() => {
+    window.localStorage.setItem("mediaTypes", mediaTypes);
+  }, [mediaTypes]);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined") return SIDEBAR_DEFAULT;
@@ -106,7 +115,7 @@ function App() {
     await run(async () => {
       const nextState = await api("/api/session/start", {
         method: "POST",
-        body: { folderIdOrUrl: selectedFolder.id, maxItems }
+        body: { folderIdOrUrl: selectedFolder.id, maxItems, mediaTypes }
       });
       setState(nextState);
       setExpanded(new Set([nextState.rootFolderId]));
@@ -133,6 +142,20 @@ function App() {
       setState(null);
       setAutoAdvance(false);
     }
+  }
+
+  async function changeMediaTypes(value) {
+    if (value === mediaTypes) return;
+    setMediaTypes(value);
+    if (!state) return;
+    await run(async () => {
+      setState(
+        await api("/api/session/media-types", {
+          method: "POST",
+          body: { mediaTypes: value }
+        })
+      );
+    });
   }
 
   async function toggleFolder(folderId, included) {
@@ -236,6 +259,42 @@ function App() {
             onClose={() => setPickerOpen(false)}
           />
         ) : null}
+
+        <section className="panel">
+          <div className="section-title">
+            <Image size={17} aria-hidden="true" />
+            Media types
+          </div>
+          <div className="segmented" role="radiogroup" aria-label="Media types">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mediaTypes === "both"}
+              className={mediaTypes === "both" ? "seg active" : "seg"}
+              onClick={() => changeMediaTypes("both")}
+            >
+              Both
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mediaTypes === "images"}
+              className={mediaTypes === "images" ? "seg active" : "seg"}
+              onClick={() => changeMediaTypes("images")}
+            >
+              Pictures
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mediaTypes === "videos"}
+              className={mediaTypes === "videos" ? "seg active" : "seg"}
+              onClick={() => changeMediaTypes("videos")}
+            >
+              Videos
+            </button>
+          </div>
+        </section>
 
         <section className="panel">
           <div className="section-title">

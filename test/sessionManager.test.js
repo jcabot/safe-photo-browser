@@ -324,6 +324,151 @@ describe("SessionManager", () => {
     expect(state.current).not.toBeNull();
     expect(state.current.parentIds.includes("a")).toBe(false);
   });
+
+  describe("media-type filter", () => {
+    it("defaults to 'both' and exposes it on getState", async () => {
+      const manager = new SessionManager({
+        driveService: fakeDrive({
+          root: [image("i1", "I1"), video("v1", "V1")]
+        })
+      });
+      await manager.start({ rootFolderId: "root", maxItems: 5 });
+      expect(manager.getState().mediaTypes).toBe("both");
+    });
+
+    it("'images' filters out videos in the queue", async () => {
+      const manager = new SessionManager({
+        driveService: fakeDrive({
+          root: [image("i1", "I1"), image("i2", "I2"), video("v1", "V1"), video("v2", "V2")]
+        })
+      });
+      await manager.start({ rootFolderId: "root", maxItems: 10, mediaTypes: "images" });
+      const seen = [];
+      while (seen.length < 10) {
+        const result = await manager.next();
+        if (!result.current) break;
+        seen.push(result.current);
+      }
+      expect(seen.length).toBe(2);
+      for (const item of seen) {
+        expect(item.mimeType.startsWith("image/")).toBe(true);
+      }
+    });
+
+    it("'videos' filters out images in the queue", async () => {
+      const manager = new SessionManager({
+        driveService: fakeDrive({
+          root: [image("i1", "I1"), image("i2", "I2"), video("v1", "V1"), video("v2", "V2")]
+        })
+      });
+      await manager.start({ rootFolderId: "root", maxItems: 10, mediaTypes: "videos" });
+      const seen = [];
+      while (seen.length < 10) {
+        const result = await manager.next();
+        if (!result.current) break;
+        seen.push(result.current);
+      }
+      expect(seen.length).toBe(2);
+      for (const item of seen) {
+        expect(item.mimeType.startsWith("video/")).toBe(true);
+      }
+    });
+
+    it("invalid mediaTypes value falls back to 'both'", async () => {
+      const manager = new SessionManager({
+        driveService: fakeDrive({ root: [image("i1", "I1")] })
+      });
+      await manager.start({ rootFolderId: "root", maxItems: 5, mediaTypes: "garbage" });
+      expect(manager.getState().mediaTypes).toBe("both");
+    });
+
+    it("setMediaTypes mid-session refilters queue and skips ineligible current", async () => {
+      const manager = new SessionManager({
+        driveService: fakeDrive({
+          root: [image("i1", "I1"), image("i2", "I2"), video("v1", "V1"), video("v2", "V2")]
+        })
+      });
+      await manager.start({ rootFolderId: "root", maxItems: 10 });
+
+      // Advance until current is a video, then toggle to images-only.
+      let result = await manager.next();
+      let attempts = 0;
+      while (!result.current?.mimeType.startsWith("video/") && attempts < 10) {
+        result = await manager.next();
+        attempts += 1;
+      }
+
+      if (result.current?.mimeType.startsWith("video/")) {
+        const after = await manager.setMediaTypes("images");
+        expect(after.mediaTypes).toBe("images");
+        // current is either an image, or null if no images remain.
+        if (after.current) {
+          expect(after.current.mimeType.startsWith("image/")).toBe(true);
+        }
+      }
+    });
+
+    it("setMediaTypes filters items already on the forward stack", async () => {
+      const manager = new SessionManager({
+        driveService: fakeDrive({
+          root: [image("i1", "I1"), video("v1", "V1")]
+        })
+      });
+      await manager.start({ rootFolderId: "root", maxItems: 5 });
+      // Advance through both items and step back so both end up in some
+      // combination of history + forwardStack.
+      await manager.next();
+      await manager.next();
+      await manager.previous();
+      await manager.previous();
+
+      // Toggle to videos-only. Any image waiting on the forward stack must
+      // not surface again on next().
+      await manager.setMediaTypes("videos");
+      const seen = [];
+      let r = await manager.next();
+      while (r.current) {
+        seen.push(r.current);
+        if (seen.length > 5) break;
+        r = await manager.next();
+      }
+      for (const item of seen) {
+        expect(item.mimeType.startsWith("video/")).toBe(true);
+      }
+    });
+
+    it("'videos' on an image-only tree exhausts the session", async () => {
+      const manager = new SessionManager({
+        driveService: fakeDrive({
+          root: [folder("a", "A"), image("r1", "R1")],
+          a: [image("a1", "A1", "a"), image("a2", "A2", "a")]
+        })
+      });
+      await manager.start({ rootFolderId: "root", maxItems: 10, mediaTypes: "videos" });
+      const result = await manager.next();
+      expect(result.current).toBeNull();
+      expect(result.exhausted).toBe(true);
+    });
+
+    it("setMediaTypes round-trips through getState", async () => {
+      const manager = new SessionManager({
+        driveService: fakeDrive({
+          root: [image("i1", "I1"), video("v1", "V1")]
+        })
+      });
+      await manager.start({ rootFolderId: "root", maxItems: 5 });
+      expect(manager.getState().mediaTypes).toBe("both");
+
+      await manager.setMediaTypes("images");
+      expect(manager.getState().mediaTypes).toBe("images");
+
+      await manager.setMediaTypes("videos");
+      expect(manager.getState().mediaTypes).toBe("videos");
+
+      await manager.setMediaTypes("garbage");
+      expect(manager.getState().mediaTypes).toBe("both");
+    });
+  });
 });
 
 function fakeDrive(pages) {
@@ -353,4 +498,8 @@ function folder(id, name) {
 
 function image(id, name, parent = "root") {
   return { id, name, mimeType: "image/jpeg", parents: [parent] };
+}
+
+function video(id, name, parent = "root") {
+  return { id, name, mimeType: "video/mp4", parents: [parent] };
 }

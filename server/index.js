@@ -83,7 +83,8 @@ app.post("/api/session/start", async (req, res, next) => {
     const folderId = parseFolderId(req.body.folderIdOrUrl);
     const state = await getSessionManager().start({
       rootFolderId: folderId,
-      maxItems: req.body.maxItems ?? 100
+      maxItems: req.body.maxItems ?? 100,
+      mediaTypes: req.body.mediaTypes ?? "both"
     });
     res.json(state);
   } catch (error) {
@@ -120,6 +121,14 @@ app.post("/api/session/filter", async (req, res, next) => {
     res.json(
       await getSessionManager().setFolderIncluded(req.body.folderId, req.body.included)
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/session/media-types", async (req, res, next) => {
+  try {
+    res.json(await getSessionManager().setMediaTypes(req.body.mediaTypes));
   } catch (error) {
     next(error);
   }

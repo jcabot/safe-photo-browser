@@ -167,6 +167,37 @@ input[type="checkbox"] {
   color: #1f2424;
 }
 
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background: #f7f4ef;
+  border: 1px solid #ded6c9;
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.segmented .seg {
+  background: transparent;
+  border: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #4d5553;
+  cursor: pointer;
+}
+
+.segmented .seg:hover:not(.active) {
+  background: #ede7dc;
+  color: #1f2424;
+}
+
+.segmented .seg.active {
+  background: #285f59;
+  color: #ffffff;
+  font-weight: 600;
+}
+
 .link-button {
   display: inline;
   border: 0;

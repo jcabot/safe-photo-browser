@@ -5,6 +5,7 @@ const QUEUE_TARGET = 5;
 // Drive's max is 1000. Bigger pages let folders ≤1000 items load in a single
 // call; bigger folders still need multiple calls (drained on first pick).
 const PAGE_SIZE = 1000;
+const MEDIA_TYPES = new Set(["both", "images", "videos"]);
 
 export class SessionManager {
   constructor({ driveService }) {
@@ -12,10 +13,11 @@ export class SessionManager {
     this.session = null;
   }
 
-  async start({ rootFolderId, maxItems = 100 }) {
+  async start({ rootFolderId, maxItems = 100, mediaTypes = "both" }) {
     const cleanMax = Number.isFinite(Number(maxItems))
       ? Math.max(1, Math.min(5000, Math.floor(Number(maxItems))))
       : 100;
+    const cleanMediaTypes = MEDIA_TYPES.has(mediaTypes) ? mediaTypes : "both";
     const root = await this.driveService.getFolder(rootFolderId);
 
     this.session = {
@@ -28,6 +30,7 @@ export class SessionManager {
       seenFileIds: new Set(),
       shownCount: 0,
       maxItems: cleanMax,
+      mediaTypes: cleanMediaTypes,
       exhausted: false,
       folders: new Map(),
       frontier: [root.id]
@@ -121,6 +124,24 @@ export class SessionManager {
     return this.getState();
   }
 
+  async setMediaTypes(value) {
+    this.requireSession();
+    this.session.mediaTypes = MEDIA_TYPES.has(value) ? value : "both";
+    this.session.queue = this.session.queue.filter((item) => this.isMediaEligible(item));
+    this.session.forwardStack = this.session.forwardStack.filter((item) =>
+      this.isMediaEligible(item)
+    );
+
+    if (this.session.current && !this.isMediaEligible(this.session.current)) {
+      return this.next();
+    }
+
+    if (this.session.current !== null) {
+      await this.fillQueue();
+    }
+    return this.getState();
+  }
+
   async expandFolder(folderId) {
     // Folder discovery is eager (discoverFolderTree at session start), so
     // every subfolder is already known to the client. Expansion is a UI-only
@@ -164,6 +185,7 @@ export class SessionManager {
       queueLength: this.session.queue.length,
       shownCount: this.session.shownCount,
       maxItems: this.session.maxItems,
+      mediaTypes: this.session.mediaTypes,
       exhausted: this.session.exhausted || this.session.shownCount >= this.session.maxItems
     };
   }
@@ -236,13 +258,20 @@ export class SessionManager {
         await this.fetchNextPage(folder.id);
       }
 
-      if (folder.mediaBuffer.length > 0) {
-        const idx = Math.floor(Math.random() * folder.mediaBuffer.length);
+      const matchIdx = [];
+      for (let i = 0; i < folder.mediaBuffer.length; i += 1) {
+        if (this.matchesMediaType(folder.mediaBuffer[i])) matchIdx.push(i);
+      }
+      if (matchIdx.length > 0) {
+        const idx = matchIdx[Math.floor(Math.random() * matchIdx.length)];
         const [item] = folder.mediaBuffer.splice(idx, 1);
         return item;
       }
-      // Picked folder yielded no media at all (e.g., only subfolders).
-      // Retry the tree walk.
+      // Picked folder has no items matching the current media-type filter
+      // (and no more pages, since we just drained it). The folder is now
+      // un-pickable under this filter — folderHasPickable will return false
+      // for it on the next iteration, so the tree walk will skip it.
+      // Retry.
     }
   }
 
@@ -267,7 +296,8 @@ export class SessionManager {
   }
 
   folderHasPickable(folder) {
-    return folder.mediaBuffer.length > 0 || !folder.exhausted;
+    if (!folder.exhausted) return true;
+    return folder.mediaBuffer.some((item) => this.matchesMediaType(item));
   }
 
   subtreeHasPickableMedia(folder) {
@@ -332,7 +362,15 @@ export class SessionManager {
   }
 
   isMediaEligible(item) {
+    if (!this.matchesMediaType(item)) return false;
     return item.parentIds.some((folderId) => this.isFolderPathIncluded(folderId));
+  }
+
+  matchesMediaType(item) {
+    const mt = this.session.mediaTypes;
+    if (mt === "images") return item.mimeType?.startsWith("image/") ?? false;
+    if (mt === "videos") return item.mimeType?.startsWith("video/") ?? false;
+    return true;
   }
 
   isFolderPathIncluded(folderId) {
