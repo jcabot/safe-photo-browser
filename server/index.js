@@ -7,6 +7,8 @@ import { SessionManager } from "./sessionManager.js";
 
 const PORT = Number(process.env.PORT ?? 5174);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
+const REDIRECT_URI =
+  process.env.OAUTH_REDIRECT_URI ?? `http://localhost:${PORT}/auth/google/callback`;
 const SCOPES = ["https://www.googleapis.com/auth/drive.readonly"];
 
 const app = express();
@@ -38,13 +40,43 @@ function getSessionManager() {
   return sessionManager;
 }
 
+function isAllowedClientOrigin(origin) {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    return (
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function clientOriginFromRequest(req) {
+  const referer = req.headers.referer;
+  if (referer) {
+    try {
+      const origin = new URL(referer).origin;
+      if (isAllowedClientOrigin(origin)) return origin;
+    } catch {
+      // fall through
+    }
+  }
+  return CLIENT_ORIGIN;
+}
+
 app.get("/auth/google/start", (req, res, next) => {
   try {
     const auth = getOAuthClient();
+    const state = Buffer.from(
+      JSON.stringify({ origin: clientOriginFromRequest(req) })
+    ).toString("base64url");
     const url = auth.generateAuthUrl({
       access_type: "offline",
       prompt: "consent",
-      scope: SCOPES
+      scope: SCOPES,
+      state
     });
     res.redirect(url);
   } catch (error) {
@@ -63,7 +95,19 @@ app.get("/auth/google/callback", async (req, res, next) => {
     const { tokens } = await auth.getToken(String(code));
     auth.setCredentials(tokens);
     saveTokens(tokens);
-    res.redirect(`${CLIENT_ORIGIN}?signedIn=1`);
+
+    let target = CLIENT_ORIGIN;
+    if (req.query.state) {
+      try {
+        const decoded = JSON.parse(
+          Buffer.from(String(req.query.state), "base64url").toString()
+        );
+        if (isAllowedClientOrigin(decoded.origin)) target = decoded.origin;
+      } catch {
+        // fall through to default
+      }
+    }
+    res.redirect(`${target}?signedIn=1`);
   } catch (error) {
     next(error);
   }
@@ -72,9 +116,12 @@ app.get("/auth/google/callback", async (req, res, next) => {
 app.get("/api/auth/status", (req, res) => {
   try {
     const auth = getOAuthClient();
-    res.json({ signedIn: Boolean(auth.credentials?.access_token || auth.credentials?.refresh_token) });
+    res.json({
+      signedIn: Boolean(auth.credentials?.access_token || auth.credentials?.refresh_token),
+      redirectUri: REDIRECT_URI
+    });
   } catch {
-    res.json({ signedIn: false });
+    res.json({ signedIn: false, redirectUri: REDIRECT_URI });
   }
 });
 

@@ -10,8 +10,9 @@ const DRIVE_FIELDS =
 export function createOAuthClient() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const port = Number(process.env.PORT ?? 5174);
   const redirectUri =
-    process.env.OAUTH_REDIRECT_URI ?? "http://localhost:5174/auth/google/callback";
+    process.env.OAUTH_REDIRECT_URI ?? `http://localhost:${port}/auth/google/callback`;
 
   if (!clientId || !clientSecret) {
     throw new Error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env.");

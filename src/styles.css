@@ -103,6 +103,25 @@ input {
   background: #ffffff;
 }
 
+.oauth-warning {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #d9b86b;
+  border-radius: 6px;
+  background: #fdf3d8;
+  color: #6a4f12;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.oauth-warning code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f6e6b8;
+  padding: 1px 4px;
+  border-radius: 3px;
+  word-break: break-all;
+}
+
 .auth-row,
 .section-title,
 .caption,

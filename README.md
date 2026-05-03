@@ -43,6 +43,10 @@ npm run dev
 
 Double-click `start.bat` to run dependency check + install + dev server in one step. It opens the browser automatically once Vite is up.
 
+### Running on a different port
+
+If port 5174 is already in use you can run the API on a different port (e.g. `PORT=5184 npm run dev`). Vite's proxy follows `SERVER_PORT` (or `PORT`) so the frontend will still reach the API. **Heads-up:** the OAuth callback URL is tied to the API port, so any non-default port must be added to your Google OAuth client's *Authorized redirect URIs* — e.g. `http://localhost:5184/auth/google/callback` — or sign-in will fail. Already-persisted tokens in `data/tokens.json` keep working without re-auth. The app shows an in-product warning whenever it's running on a non-default port.
+
 ## Scripts
 
 - `npm run dev` — runs the Express API (port 5174) and Vite frontend (port 5173) concurrently.

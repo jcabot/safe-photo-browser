@@ -25,6 +25,7 @@ const SIDEBAR_DEFAULT = 320;
 
 function App() {
   const [signedIn, setSignedIn] = useState(false);
+  const [oauthRedirectUri, setOauthRedirectUri] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [maxItems, setMaxItems] = useState(100);
@@ -102,9 +103,18 @@ function App() {
 
   useEffect(() => {
     api("/api/auth/status")
-      .then((data) => setSignedIn(data.signedIn))
+      .then((data) => {
+        setSignedIn(data.signedIn);
+        if (data.redirectUri) setOauthRedirectUri(data.redirectUri);
+      })
       .catch(() => setSignedIn(false));
   }, []);
+
+  const oauthPortWarning = useMemo(() => {
+    if (!oauthRedirectUri) return null;
+    if (oauthRedirectUri === "http://localhost:5174/auth/google/callback") return null;
+    return oauthRedirectUri;
+  }, [oauthRedirectUri]);
 
   async function startSession(event) {
     event.preventDefault();
@@ -217,6 +227,13 @@ function App() {
             <LogIn size={18} aria-hidden="true" />
             Sign in
           </a>
+          {oauthPortWarning ? (
+            <p className="oauth-warning">
+              Server is on a non-default port. Sign-in will fail unless{" "}
+              <code>{oauthPortWarning}</code> is registered as an authorized
+              redirect URI in your Google OAuth client.
+            </p>
+          ) : null}
         </section>
 
         <form className="panel session-form" onSubmit={startSession}>
